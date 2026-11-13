@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="sr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Stanje portfolija</title>
+<style>
+:root{--bg:#f1f3f5;--card:#fff;--ink:#1a2236;--mut:#667085;--line:#e4e7ec;--acc:#1f5bcc;--pos:#157f3b;--neg:#c62828;--head:#1b2a4e}
+@media(prefers-color-scheme:dark){:root{--bg:#0f141c;--card:#18202c;--ink:#e8ecf3;--mut:#93a0b4;--line:#2a3446;--acc:#6ea0ff;--pos:#4cc77a;--neg:#ff7b72;--head:#22304f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:1100px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-right)) 32px max(16px,env(safe-area-inset-left))}
+h1{font-size:22px;margin:4px 0 2px}
+.sub{color:var(--mut);font-size:12.5px;margin:0 0 14px}
+.sub button{all:unset;cursor:pointer;color:var(--acc);margin-left:8px}
+h2{font-size:14px;margin:22px 0 8px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--card);border-radius:10px;padding:12px 14px;text-align:center}
+.tile .l{font-size:12px;color:var(--mut)}
+.tile .v{font-size:24px;font-weight:700;margin:4px 0 2px;font-variant-numeric:tabular-nums}
+.tile .c{font-size:11.5px;color:var(--mut)}
+.pos{color:var(--pos)}.neg{color:var(--neg)}
+.card{background:var(--card);border-radius:10px;padding:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:720px){.grid2{grid-template-columns:1fr}.tile .v{font-size:21px}}
+#line{position:relative;width:100%}
+#line svg{display:block;width:100%;height:auto;touch-action:pan-y}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:4px 8px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-120%);display:none}
+.row{display:grid;grid-template-columns:92px 1fr;align-items:center;gap:8px;margin:7px 0;font-size:13px}
+.track{position:relative;height:22px}
+.bar{position:absolute;top:2px;height:18px;border-radius:3px;background:var(--acc)}
+.bar.n{background:var(--neg)}
+.zero{position:absolute;top:0;bottom:0;width:1px;background:var(--mut);opacity:.5}
+.val{position:absolute;top:2px;font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{background:var(--head);color:#fff;font-weight:600;font-size:12px;padding:8px 6px;text-align:right}
+th:first-child,td:first-child{text-align:left;padding-left:10px}
+td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--line);font-size:13px}
+td:first-child{font-weight:700}
+.tbl{overflow:hidden;border-radius:10px;background:var(--card)}
+@media(max-width:720px){
+ thead{display:none}
+ table,tbody,tr,td{display:block}
+ tr{padding:10px 12px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:2px 12px}
+ td{border:0;padding:2px 0;display:flex;justify-content:space-between;text-align:right}
+ td:first-child{grid-column:1/-1;font-size:15px;padding:0 0 4px}
+ td::before{content:attr(data-l);color:var(--mut);font-weight:400;font-size:12px;margin-right:8px}
+ td:first-child::before{content:none}
+}
+.err{background:#fdecea;color:#8a1c14;border-radius:8px;padding:10px 12px;margin:0 0 12px;display:none;font-size:13px}
+.foot{color:var(--mut);font-size:11.5px;margin-top:18px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Stanje portfolija</h1>
+<p class="sub"><span id="stamp">Učitavanje…</span><button id="reload" type="button">Osveži</button></p>
+<div class="err" id="err"></div>
+<div class="tiles" id="tiles"></div>
+<h2>Kumulativni prinos od otvaranja računa</h2>
+<div class="card"><div id="line"></div></div>
+<div class="grid2">
+ <div><h2>Prinos po periodima</h2><div class="card" id="periods"></div></div>
+ <div><h2>Raspodela po sektorima</h2><div class="card" id="sectors"></div></div>
+</div>
+<h2>Pozicije</h2>
+<div class="tbl"><table><thead><tr><th>Fond</th><th>Količina</th><th>Prosečna cena</th><th>Cena</th><th>Vrednost</th><th>Udeo</th><th>Nerealizovani dobitak</th><th>Prinos</th><th>Dobitak danas</th></tr></thead><tbody id="pos"></tbody></table></div>
+<p class="foot">Podaci su snimak iz IBKR računa, osvežava se jednom dnevno. Nije investicioni savet.</p>
+</div>
+<script>
+const SHEET="1T-gsLaODfsk7gvNsgJlrGLF9bdrAEzJhn0AMIrtNFCs";
+const URLB="https://docs.google.com/spreadsheets/d/"+SHEET+"/gviz/tq?tqx=out:json&headers=1&sheet=";
+const nf=(d,o={})=>new Intl.NumberFormat("de-DE",{minimumFractionDigits:d,maximumFractionDigits:d,...o});
+const eur0=nf(0),eur2=nf(2),p1=nf(1),$=id=>document.getElementById(id);
+const fe=(v,d=0)=>(d?eur2:eur0).format(v)+" €";
+const fs=(v,d=0)=>(v>0?"+":v<0?"−":"")+(d?eur2:eur0).format(Math.abs(v))+" €";
+const fp=(v,s)=>(s&&v>0?"+":v<0?"−":"")+p1.format(Math.abs(v)*100)+"%";
+const cls=v=>v>0?"pos":v<0?"neg":"";
+const ymd=n=>{n=Math.round(n);return String(n%100).padStart(2,"0")+"."+String(Math.floor(n/100)%100).padStart(2,"0")+"."+Math.floor(n/10000)};
+async function load(name){
+  const r=await fetch(URLB+encodeURIComponent(name)+"&_="+Date.now(),{cache:"no-store"});
+  if(!r.ok)throw new Error("HTTP "+r.status);
+  const t=await r.text();
+  const j=JSON.parse(t.slice(t.indexOf("{"),t.lastIndexOf("}")+1));
+  if(j.status==="error")throw new Error((j.errors&&j.errors[0]&&j.errors[0].message)||"gviz error");
+  return j.table.rows.map(r=>r.c.map(c=>c?c.v:null));
+}
+function pdate(v){
+  if(typeof v==="string"){const m=v.match(/Date\((\d+),(\d+),(\d+)/);if(m)return new Date(+m[1],+m[2],+m[3]);const d=v.match(/(\d+)\.(\d+)\.(\d+)/);if(d)return new Date(+d[3],+d[2]-1,+d[1]);}
+  return null;
+}
+async function fetchAll(){
+  const [web,pos,sec,hist]=await Promise.all([load("Web"),load("Pozicije"),load("Sektori"),load("Prinos")]);
+  const k={},text={};web.forEach(r=>{if(r[0]){k[r[0]]=r[1];text[r[0]]=r[2];}});
+  return{k,stamp:text.stamp||"",
+   pos:pos.filter(r=>r[0]).map(r=>({n:r[0],q:r[2],avg:r[3],px:r[4],val:r[5],cost:r[6],pl:r[7],day:r[8],sh:r[9],ret:r[10]})),
+   sec:sec.filter(r=>r[0]).map(r=>({n:r[0],v:r[1],s:r[2]})),
+   hist:hist.map(r=>({d:pdate(r[0]),c:r[1]})).filter(r=>r.d&&typeof r.c==="number")};
+}
+function tile(l,v,c,cl){return `<div class="tile"><div class="l">${l}</div><div class="v ${cl||""}">${v}</div><div class="c">${c}</div></div>`}
+function render(D){
+  const k=D.k;
+  const m=D.stamp.match(/od (.+?) \(Berlin/);
+  $("stamp").textContent="Podaci iz IBKR od "+(m?m[1]:"—")+" (Berlin)";
+  $("tiles").innerHTML=
+   tile("Stanje na računu",fe(k.nav),fe(k.cash)+" u gotovini")+
+   tile("Nerealizovani dobitak",fs(k.unreal),fp(k.retcost,1)+" na uloženo",cls(k.unreal))+
+   tile("Danas",fp(k.d1,1),"Ponderisano, bez uplata",cls(k.d1))+
+   tile("Poslednjih 7 dana",fp(k.d7,1),"Vremenski ponderisano",cls(k.d7))+
+   tile("Od početka meseca",fp(k.mtd,1),"Vremenski ponderisano",cls(k.mtd))+
+   tile("Od otvaranja računa",fp(k.ytd,1),"Od maksimuma: "+p1.format(Math.abs(k.dd)*100)+"%",cls(k.ytd));
+  bars($("periods"),[["Danas",k.d1],["7 dana",k.d7],["Ovaj mesec",k.mtd],["1 mesec",k.m1],["Od početka",k.ytd]],v=>fp(v,1));
+  bars($("sectors"),D.sec.map(s=>[s.n,s.s]),v=>p1.format(v*100)+"%",true);
+  $("pos").innerHTML=D.pos.map(p=>`<tr><td>${p.n}</td><td data-l="Količina">${p.q}</td><td data-l="Prosečna cena">${fe(p.avg,2)}</td><td data-l="Cena">${fe(p.px,2)}</td><td data-l="Vrednost">${fe(p.val,2)}</td><td data-l="Udeo">${p1.format(p.sh*100)}%</td><td data-l="Dobitak" class="${cls(p.pl)}">${fs(p.pl,2)}</td><td data-l="Prinos" class="${cls(p.ret)}">${fp(p.ret,1)}</td><td data-l="Dobitak danas" class="${cls(p.day)}">${fs(p.day,2)}</td></tr>`).join("");
+  window._hist=D.hist;drawLine();
+}
+function bars(el,rows,fmt,unsigned){
+  const vals=rows.map(r=>r[1]);
+  const mn0=unsigned?0:Math.min(0,...vals),mx0=Math.max(0,...vals),sp=(mx0-mn0)||1,pad=sp*.3;
+  const lo=mn0<0?mn0-pad:mn0,hi=mx0+pad,span=hi-lo,z=(0-lo)/span*100;
+  el.innerHTML=rows.map(([l,v])=>{
+    const w=Math.abs(v)/span*100,left=v>=0?z:z-w;
+    const pos=v>=0?"left:"+(left+w+1)+"%":"right:"+(100-left+1)+"%";
+    return `<div class="row"><div>${l}</div><div class="track">${unsigned?"":`<div class="zero" style="left:${z}%"></div>`}<div class="bar ${v<0?"n":""}" style="left:${left}%;width:${Math.max(w,.8)}%"></div><div class="val" style="${pos}">${fmt(v)}</div></div></div>`}).join("");
+}
+function drawLine(){
+  const H=window._hist;if(!H||!H.length)return;
+  const box=$("line"),W=Math.max(box.clientWidth,260),h=Math.round(Math.min(W*.42,300)+10),pl=44,pr=10,pt=8,pb=22;
+  const ys=H.map(p=>p.c),lo=Math.min(0,...ys),hi=Math.max(0,...ys);
+  const step=.1,y0=Math.floor(lo/step)*step,y1=Math.ceil(hi/step)*step;
+  const t0=H[0].d.getTime(),t1=H[H.length-1].d.getTime()||1;
+  const X=d=>pl+(d.getTime()-t0)/((t1-t0)||1)*(W-pl-pr),Y=v=>pt+(y1-v)/((y1-y0)||1)*(h-pt-pb);
+  let g="";
+  const n=Math.round((y1-y0)/step),every=n>8?2:1;
+  for(let i=0;i<=n;i+=every){const v=y0+i*step;g+=`<line x1="${pl}" x2="${W-pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${pl-6}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--mut)">${Math.round(v*100)}%</text>`}
+  g+=`<line x1="${pl}" x2="${W-pr}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--mut)"/>`;
+  const months=["jan","feb","mar","apr","maj","jun","jul","avg","sep","okt","nov","dec"];
+  let last=-1,lx=-99;const mind=W<520?70:40;
+  H.forEach(p=>{const mo=p.d.getMonth();if(mo!==last){last=mo;const x=X(p.d);if(x-lx>=mind){lx=x;g+=`<text x="${X(p.d)}" y="${h-6}" text-anchor="middle" font-size="11" fill="var(--mut)">${months[mo]}</text>`}}});
+  const path=H.map((p,i)=>(i?"L":"M")+X(p.d).toFixed(1)+" "+Y(p.c).toFixed(1)).join("");
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${h}" width="${W}" height="${h}">${g}<path d="${path}" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linejoin="round"/><circle id="dot" r="4" fill="var(--acc)" style="display:none"/></svg><div class="tip" id="tip"></div>`;
+  const svg=box.querySelector("svg"),dot=$("dot"),tip=$("tip");
+  const move=e=>{const r=svg.getBoundingClientRect(),x=(e.clientX-r.left)*(W/r.width);
+    let b=0,bd=1e18;H.forEach((p,i)=>{const d=Math.abs(X(p.d)-x);if(d<bd){bd=d;b=i}});
+    const p=H[b];dot.setAttribute("cx",X(p.d));dot.setAttribute("cy",Y(p.c));dot.style.display="";
+    tip.style.display="block";tip.style.left=(X(p.d)/W*100)+"%";tip.style.top=(Y(p.c)/h*100)+"%";
+    tip.textContent=String(p.d.getDate()).padStart(2,"0")+"."+String(p.d.getMonth()+1).padStart(2,"0")+"."+p.d.getFullYear()+" · "+fp(p.c,1)};
+  svg.addEventListener("pointermove",move);svg.addEventListener("pointerdown",move);
+  svg.addEventListener("pointerleave",()=>{dot.style.display="none";tip.style.display="none"});
+}
+async function refresh(){
+  const err=$("err");
+  try{
+    const D=await fetchAll();render(D);err.style.display="none";
+    try{localStorage.setItem("pf",JSON.stringify({t:Date.now(),D}))}catch(e){}
+  }catch(e){
+    let cached=null;try{cached=JSON.parse(localStorage.getItem("pf"))}catch(x){}
+    if(cached){cached.D.hist.forEach(p=>p.d=new Date(p.d));render(cached.D);err.textContent="Nije moguće osvežiti podatke, prikazan je poslednji sačuvani snimak.";}
+    else{err.textContent="Podaci trenutno nisu dostupni. Pokušajte ponovo kasnije.";$("stamp").textContent="";}
+    err.style.display="block";
+  }
+}
+$("reload").onclick=refresh;
+let rt;addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(drawLine,120)});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
+setInterval(refresh,15*60*1000);
+refresh();
+</script>
+</body>
+</html>
